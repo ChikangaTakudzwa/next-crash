@@ -10,22 +10,35 @@ import {
   Revenue,
 } from './definitions';
 import { formatCurrency } from './utils';
-export const dynamic = 'force-dynamic'
+import { Pool } from 'pg';
+
+const pool = new Pool({
+  
+    user: 'postgres',
+    host: 'localhost', 
+    database: 'testdb',
+    password: 'masterpassword',
+    port: 5432,
+});
+// export const dynamic = 'force-dynamic'
+
 
 export async function fetchRevenue() {
   // Add noStore() here to prevent the response from being cached.
   // This is equivalent to in fetch(..., {cache: 'no-store'}).
-
+  noStore();
   try {
     // Artificially delay a response for demo purposes.
     // Don't do this in production :)
 
-    // console.log('Fetching revenue data...');
-    // await new Promise((resolve) => setTimeout(resolve, 3000));
+    console.log('Fetching revenue data...');
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const db = await pool.connect();
 
-    const data = await sql<Revenue>`SELECT * FROM revenue`;
+    // const data = await db<Revenue>`SELECT * FROM revenue`;
+    const data = await db.query(`SELECT * FROM revenue`);
 
-    // console.log('Data fetch completed after 3 seconds.');
+    console.log('Data fetch completed after 3 seconds.');
 
     return data.rows;
   } catch (error) {
@@ -36,12 +49,14 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
-    const data = await sql<LatestInvoiceRaw>`
+    const db = await pool.connect();
+    // const data = await sql<LatestInvoiceRaw>`
+    const data = await db.query(`
       SELECT invoices.amount, customers.name, customers.image_url, customers.email, invoices.id
       FROM invoices
       JOIN customers ON invoices.customer_id = customers.id
       ORDER BY invoices.date DESC
-      LIMIT 5`;
+      LIMIT 5`);
 
     const latestInvoices = data.rows.map((invoice) => ({
       ...invoice,
@@ -59,12 +74,13 @@ export async function fetchCardData() {
     // You can probably combine these into a single SQL query
     // However, we are intentionally splitting them to demonstrate
     // how to initialize multiple queries in parallel with JS.
-    const invoiceCountPromise = sql`SELECT COUNT(*) FROM invoices`;
-    const customerCountPromise = sql`SELECT COUNT(*) FROM customers`;
-    const invoiceStatusPromise = sql`SELECT
+    const db = await pool.connect();
+    const invoiceCountPromise = db.query(`SELECT COUNT(*) FROM invoices`);
+    const customerCountPromise = db.query(`SELECT COUNT(*) FROM customers`);
+    const invoiceStatusPromise = db.query(`SELECT
          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
          SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
-         FROM invoices`;
+         FROM invoices`);
 
     const data = await Promise.all([
       invoiceCountPromise,
@@ -97,33 +113,39 @@ export async function fetchFilteredInvoices(
   const offset = (currentPage - 1) * ITEMS_PER_PAGE;
 
   try {
-    const invoices = await sql<InvoicesTable>`
-      SELECT
-        invoices.id,
-        invoices.amount,
-        invoices.date,
-        invoices.status,
-        customers.name,
-        customers.email,
-        customers.image_url
-      FROM invoices
-      JOIN customers ON invoices.customer_id = customers.id
-      WHERE
-        customers.name ILIKE ${`%${query}%`} OR
-        customers.email ILIKE ${`%${query}%`} OR
-        invoices.amount::text ILIKE ${`%${query}%`} OR
-        invoices.date::text ILIKE ${`%${query}%`} OR
-        invoices.status ILIKE ${`%${query}%`}
-      ORDER BY invoices.date DESC
-      LIMIT ${ITEMS_PER_PAGE} OFFSET ${offset}
-    `;
+    const db = await pool.connect();
+    const invoices = await db.query({
+      text: `
+        SELECT
+          invoices.id,
+          invoices.amount,
+          invoices.date,
+          invoices.status,
+          customers.name,
+          customers.email,
+          customers.image_url
+        FROM invoices
+        JOIN customers ON invoices.customer_id = customers.id
+        WHERE
+          customers.name ILIKE $1 OR
+          customers.email ILIKE $2 OR
+          invoices.amount::text ILIKE $3 OR
+          invoices.date::text ILIKE $4 OR
+          invoices.status ILIKE $5
+        ORDER BY invoices.date DESC
+        LIMIT $6 OFFSET $7
+      `,
+      values: [`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, ITEMS_PER_PAGE, offset],
+    });
 
     return invoices.rows;
   } catch (error) {
     console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoices.');
+    throw new Error('Failed to fetch invoices on search....');
   }
 }
+
+
 
 export async function fetchInvoicesPages(query: string) {
   try {
