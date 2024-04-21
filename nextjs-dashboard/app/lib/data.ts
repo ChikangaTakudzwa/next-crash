@@ -30,10 +30,9 @@ export async function fetchRevenue() {
   try {
     // Artificially delay a response for demo purposes.
     // Don't do this in production :)
-
+    const db = await pool.connect();
     console.log('Fetching revenue data...');
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    const db = await pool.connect();
 
     // const data = await db<Revenue>`SELECT * FROM revenue`;
     const data = await db.query(`SELECT * FROM revenue`);
@@ -176,44 +175,52 @@ export async function fetchInvoicesPages(query: string) {
 
 export async function fetchInvoiceById(id: string) {
   try {
-    const data = await sql<InvoiceForm>`
+    const db = await pool.connect();
+    const queryText = `
       SELECT
         invoices.id,
         invoices.customer_id,
         invoices.amount,
         invoices.status
       FROM invoices
-      WHERE invoices.id = ${id};
+      WHERE invoices.id = $1;
     `;
+    const { rows } = await db.query(queryText, [id]);
 
-    const invoice = data.rows.map((invoice) => ({
-      ...invoice,
-      // Convert amount from cents to dollars
-      amount: invoice.amount / 100,
-    }));
+    // Ensure there's a result
+    if (rows.length === 0) {
+      throw new Error(`Invoice with id ${id} not found.`);
+    }
 
-    return invoice[0];
+    const invoice = rows[0];
+
+    // Convert amount from cents to dollars
+    invoice.amount /= 100;
+
+    return invoice;
   } catch (error) {
     console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoice.');
+    throw new Error('Failed to fetch invoice by id.');
   }
 }
 
+
 export async function fetchCustomers() {
   try {
-    const data = await sql<CustomerField>`
+    const db = await pool.connect();
+    const data = await db.query(`
       SELECT
         id,
         name
       FROM customers
       ORDER BY name ASC
-    `;
+    `);
 
     const customers = data.rows;
     return customers;
   } catch (err) {
     console.error('Database Error:', err);
-    throw new Error('Failed to fetch all customers.');
+    throw new Error('Failed to fetch all customers on create.');
   }
 }
 

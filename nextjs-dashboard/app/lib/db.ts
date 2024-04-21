@@ -1,11 +1,20 @@
 import { Pool } from 'pg';
 
-export const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost/', 
-    database: 'mydb',
-    // password: '',
-    port: 5432,
+const pool = new Pool({
+  user: 'postgres',
+  host: 'localhost', 
+  database: 'testdb',
+  password: 'masterpassword',
+  port: 5432,
 });
 
-module.exports = pool;
+const db = {
+    async connect() {
+      return await pool.connect();
+    },
+    async disconnect() {
+      await pool.end();
+    }
+};
+  
+export default db;
